@@ -28,6 +28,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('CHAT_ID')
 
 RETRY_PERIOD = 600
+TWO_WEEKS = 1209600 
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -46,13 +47,15 @@ def check_tokens():
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN
     }
+    missing_tokens = []
     for key, value in all_tokens.items():
         if not value:
-            logging.critical(
-                f'Критическая ошибка. Токен {key} не найден.'
-            )
-            raise exceptions.TokenNotFoundError
-    return True
+            missing_tokens.append(key)
+    if not missing_tokens:
+        return True
+    else:
+        raise logging.critical(f'Ошибка доступа к токенам: {missing_tokens}')
+        
 
 
 def send_message(bot, message):
@@ -64,7 +67,7 @@ def send_message(bot, message):
         )
         logging.debug(f'Сообщение "{message}" успешно отправлено.')
     except Exception as error:
-        logging.error(f'Ошибка при отправке сообщения: {error}')
+        raise error
 
 
 def get_api_answer(timestamp):
@@ -77,23 +80,20 @@ def get_api_answer(timestamp):
                 'from_date': timestamp
             }
         )
-        if response.status_code == HTTPStatus.OK:
-            return response.json()
-        else:
-            logging.error(f'Ошибка доступа к API: {response.status_code}')
-            raise exceptions.APINotAvailableError(response.status_code)
     except requests.RequestException as error:
         logging.error(f'Ошибка запроса к API: {error}')
+    if response.status_code == HTTPStatus.OK:
+        return response.json()
+    else:
+        raise exceptions.APINotAvailableError(response.status_code)
 
 
 def check_response(response):
     """Проверка ответа от API."""
     if not isinstance(response, dict):
-        logging.error('Ответ от API не содержит словаря')
         raise TypeError('Ответ от API не содержит словаря')
     homework = response.get('homeworks')
     if not isinstance(homework, list):
-        logging.error('Объект homeworks в ответе от API - не список.')
         raise TypeError('Объект homeworks в ответе от API - не список.')
     return homework
 
@@ -102,15 +102,12 @@ def parse_status(homework):
     """Создание сообщения для бота."""
     homework_name = homework.get('homework_name')
     if homework_name is None:
-        logging.error('В словаре homeworks нет ключа homework_name.')
         raise KeyError('В словаре homeworks нет ключа homework_name.')
     status = homework.get('status')
     if status not in HOMEWORK_VERDICTS.keys():
-        logging.error(exceptions.StatusError(status))
         raise exceptions.StatusError(status)
-    else:
-        verdict = HOMEWORK_VERDICTS[status]
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    verdict = HOMEWORK_VERDICTS[status]
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
@@ -124,22 +121,25 @@ def main():
         raise exceptions.TokenNotFoundError
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time())
+    timestamp = int(time.time()) - TWO_WEEKS
+    unique_errors = set()
 
     while True:
         try:
             response = get_api_answer(timestamp)
-            homework = check_response(response)
-            if homework:
-                message = parse_status(homework[0])
+            homeworks_list = check_response(response)
+            if homeworks_list:
+                message = parse_status(homeworks_list[0])
                 send_message(bot, message)
             else:
                 message = 'Статус работы не изменился'
                 logging.debug(message)
-            timestamp = response.get('current_date')
-            print(timestamp)
+            timestamp = response.get('current_date', timestamp)
         except Exception as error:
-            message = f'Сбой в работе программы: {error}'
+            logging.error(error)
+            if error not in unique_errors:
+                send_message(bot, error)
+            unique_errors.add(error)
         finally:
             time.sleep(RETRY_PERIOD)
 
