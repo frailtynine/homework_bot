@@ -28,7 +28,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('CHAT_ID')
 
 RETRY_PERIOD = 600
-TWO_WEEKS = 1209600 
+TWO_WEEKS = 1209600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -55,7 +55,6 @@ def check_tokens():
         return True
     else:
         raise logging.critical(f'Ошибка доступа к токенам: {missing_tokens}')
-        
 
 
 def send_message(bot, message):
