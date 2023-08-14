@@ -5,7 +5,7 @@ class TokenNotFoundError(Exception):
     """Ошибка доступа к токенам в окружении."""
 
     def __init__(self):
-        super().__init__(f'Критическая ошибка окружения.')
+        super().__init__('Критическая ошибка окружения.')
 
 
 class APINotAvailableError(Exception):
