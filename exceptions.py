@@ -19,4 +19,5 @@ class StatusError(Exception):
     """Ошибка статуса в объекте homework."""
 
     def __init__(self, status):
-        super().__init__(f'Непредусмотренный статус поля status в объекте homework: {status}')
+        super().__init__('Непредусмотренный статус поля'
+                         f' status в объекте homework: {status}')

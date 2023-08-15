@@ -1,6 +1,7 @@
 """Модуль для телеграм-бота, проверяющего статус заданий."""
 
 import logging
+import json
 import os
 import sys
 from http import HTTPStatus
@@ -51,10 +52,8 @@ def check_tokens():
     for key, value in all_tokens.items():
         if not value:
             missing_tokens.append(key)
-    if not missing_tokens:
-        return True
-    else:
-        raise logging.critical(f'Ошибка доступа к токенам: {missing_tokens}')
+    result = not missing_tokens
+    return (result, missing_tokens)
 
 
 def send_message(bot, message):
@@ -82,9 +81,11 @@ def get_api_answer(timestamp):
     except requests.RequestException as error:
         logging.error(f'Ошибка запроса к API: {error}')
     if response.status_code == HTTPStatus.OK:
-        return response.json()
-    else:
-        raise exceptions.APINotAvailableError(response.status_code)
+        try:
+            return response.json()
+        except json.decoder.JSONDecodeError as error:
+            raise error
+    raise exceptions.APINotAvailableError(response.status_code)
 
 
 def check_response(response):
@@ -94,6 +95,9 @@ def check_response(response):
     homework = response.get('homeworks')
     if not isinstance(homework, list):
         raise TypeError('Объект homeworks в ответе от API - не список.')
+    current_date = response.get('current_date')
+    if not isinstance(current_date, int):
+        raise TypeError('Объект current_date в ответе API - не целое число.')
     return homework
 
 
@@ -116,12 +120,14 @@ def main():
     последние данные о статусе домашней работы у Яндекс.Практикума
     и передает сообщение об изменении статуса работы.
     """
-    if not check_tokens():
+    tokens_check, missing_tokens = check_tokens()
+    if not tokens_check:
+        logging.critical(f'Ошибка доступа к токенам: {missing_tokens}')
         raise exceptions.TokenNotFoundError
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time()) - TWO_WEEKS
-    unique_errors = set()
+    last_error = None
 
     while True:
         try:
@@ -136,9 +142,9 @@ def main():
             timestamp = response.get('current_date', timestamp)
         except Exception as error:
             logging.error(error)
-            if error not in unique_errors:
+            if error != last_error:
                 send_message(bot, error)
-            unique_errors.add(error)
+            last_error = error
         finally:
             time.sleep(RETRY_PERIOD)
 
